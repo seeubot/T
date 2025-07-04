@@ -10,8 +10,7 @@ import axios from "axios";
 import dotenv from "dotenv";
 import requestIp from "request-ip";
 import BadWordsNext from "bad-words-next";
-import en from "bad-words-next/lib/en.js";
-
+import data from "bad-words-next/data.js"; 
 
 dotenv.config();
 
@@ -28,7 +27,7 @@ if (!TELEGRAM_BOT_TOKEN) {
   process.exit(1);
 }
 
-const badwords = new BadWordsNext({ data: en });
+const badwords = new BadWordsNext({ data });
 const bannedIPs = new Set();
 
 app.use(requestIp.mw());
