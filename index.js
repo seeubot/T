@@ -13,10 +13,9 @@ import { createRequire } from "module";
 
 dotenv.config();
 
-// 🧠 Import bad-words in ESM using CommonJS require
+// 🧠 Leo Profanity — No API key, full disrespect filter
 const require = createRequire(import.meta.url);
-const Filter = require("bad-words");
-const badwords = new Filter();
+const leoProfanity = require("leo-profanity");
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -109,8 +108,10 @@ function sendToTelegram(filePath, prompt) {
   });
 }
 
-async function notifyBanToTelegram(ip, prompt, badWords) {
-  const text = `🚫 *Blocked Request Alert!*\n\n*IP:* \`${ip}\`\n*Prompt:* \`${prompt}\`\n*Blocked for:* \`${badWords.join(', ')}\``;
+async function notifyBanToTelegram(ip, originalPrompt) {
+  const censoredPrompt = leoProfanity.clean(originalPrompt, '*'); // mask bad words
+  const text = `🚫 *Blocked Request Alert!*\n\n*IP:* \`${ip}\`\n*Prompt:* \`${censoredPrompt}\``;
+
   await axios.post(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
     chat_id: TELEGRAM_CHAT_ID,
     text: text,
@@ -132,14 +133,12 @@ app.get("/generate-video", async (req, res) => {
     return res.status(403).send("You're banned. Go cry somewhere else 💀");
   }
 
-  if (badwords.isProfane(prompt)) {
-    const cleaned = badwords.clean(prompt);
-    const caughtWords = prompt
-      .split(/\s+/)
-      .filter(word => badwords.isProfane(word));
+  if (leoProfanity.check(prompt)) {
+    const words = prompt.split(/\s+/);
+    const caughtWords = words.filter(word => leoProfanity.check(word));
 
     bannedIPs.add(ip);
-    await notifyBanToTelegram(ip, prompt, caughtWords);
+    await notifyBanToTelegram(ip, prompt);
     return res.status(403).send("Nah bruh, you got banned. Dirty mouth = no access 🧼");
   }
 
