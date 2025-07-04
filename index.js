@@ -10,10 +10,12 @@ import axios from "axios";
 import dotenv from "dotenv";
 import requestIp from "request-ip";
 import BadWordsNext from "bad-words-next";
-import data from "bad-words-next/data.js"; 
+import en from "bad-words-next/data/en.json" assert { type: "json" };
+
 
 dotenv.config();
 
+const badwords = new BadWordsNext({ data: en });
 const app = express();
 const port = process.env.PORT || 3000;
 const __filename = fileURLToPath(import.meta.url);
@@ -27,7 +29,6 @@ if (!TELEGRAM_BOT_TOKEN) {
   process.exit(1);
 }
 
-const badwords = new BadWordsNext({ data });
 const bannedIPs = new Set();
 
 app.use(requestIp.mw());
