@@ -9,8 +9,9 @@ import FormData from "form-data";
 import axios from "axios";
 import dotenv from "dotenv";
 import requestIp from "request-ip";
-const BadWordsNext = require("bad-words-next");
-const en = require("bad-words-next/lib/en");
+import BadWordsNext from "bad-words-next";
+import en from "bad-words-next/lib/en.js";
+
 
 dotenv.config();
 
