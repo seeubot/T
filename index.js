@@ -8,6 +8,10 @@ import https from "https";
 import FormData from "form-data";
 import axios from "axios";
 import dotenv from "dotenv";
+import requestIp from "request-ip";
+const BadWordsNext = require("bad-words-next");
+const en = require("bad-words-next/lib/en");
+
 dotenv.config();
 
 const app = express();
@@ -22,6 +26,11 @@ if (!TELEGRAM_BOT_TOKEN) {
   console.error("💀 TELEGRAM_BOT_TOKEN is missing. Go check your .env.");
   process.exit(1);
 }
+
+const badwords = new BadWordsNext({ data: en });
+const bannedIPs = new Set();
+
+app.use(requestIp.mw());
 
 function downloadWithFFmpeg(m3u8Url, outputPath) {
   return new Promise((resolve, reject) => {
@@ -119,12 +128,39 @@ function sendToTelegram(filePath, prompt) {
   });
 }
 
+async function notifyBanToTelegram(ip, prompt, badWords) {
+  try {
+    const text = `🚫 *Blocked Request Alert!*\n\n*IP:* \`${ip}\`\n*Prompt:* \`${prompt}\`\n*Blocked for:* \`${badWords.join(', ')}\``;
+    await axios.post(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+      chat_id: TELEGRAM_CHAT_ID,
+      text: text,
+      parse_mode: "Markdown",
+    });
+  } catch (err) {
+    console.error("Telegram ban alert failed:", err.message);
+  }
+}
+
 app.get("/generate-video", async (req, res) => {
   const { prompt, seed = 3, fps = 10 } = req.query;
+  const ip = req.clientIp || req.headers["x-forwarded-for"]?.split(",")[0] || "unknown";
 
   if (!prompt) {
     console.warn("Missing prompt. User skill issue.");
     return res.status(400).send("Missing prompt. This ain't it, chief.");
+  }
+
+  if (bannedIPs.has(ip)) {
+    console.warn(`Banned IP tried access: ${ip}`);
+    return res.status(403).send("You're banned. Go cry somewhere else 💀");
+  }
+
+  if (badwords.check(prompt)) {
+    const caughtWords = [];
+    badwords.filter(prompt, word => caughtWords.push(word));
+    bannedIPs.add(ip);
+    await notifyBanToTelegram(ip, prompt, caughtWords);
+    return res.status(403).send("Nah bruh, you got banned. Dirty mouth = no access 🧼");
   }
 
   let outputPath = "";
