@@ -31,42 +31,47 @@ if (!TELEGRAM_BOT_TOKEN) {
   process.exit(1);
 }
 
-// 🚀 Enhanced API configurations
+// 🚀 Enhanced API configurations - Updated for Image-to-Video
 const VIDEO_APIS = [
-  {
-    name: "multimodalart/self-forcing",
-    endpoint: "multimodalart/self-forcing",
-    method: "/video_generation_handler_streaming",
-    maxDuration: 10,
-    fps: 10
-  },
   {
     name: "stabilityai/stable-video-diffusion-img2vid-xt",
     endpoint: "stabilityai/stable-video-diffusion-img2vid-xt",
     method: "/predict",
     maxDuration: 25,
-    fps: 6
+    fps: 6,
+    requiresImage: true
   },
   {
-    name: "KingNish/video-generation",
-    endpoint: "KingNish/video-generation",
-    method: "/predict",
-    maxDuration: 8,
-    fps: 8
-  },
-  {
-    name: "wangfuyun/AnimateLCM",
-    endpoint: "wangfuyun/AnimateLCM",
+    name: "ali-vilab/i2vgen-xl",
+    endpoint: "ali-vilab/i2vgen-xl",
     method: "/predict",
     maxDuration: 16,
-    fps: 8
+    fps: 8,
+    requiresImage: true
   },
   {
     name: "multimodalart/stable-video-diffusion",
     endpoint: "multimodalart/stable-video-diffusion",
     method: "/predict",
     maxDuration: 25,
-    fps: 6
+    fps: 6,
+    requiresImage: true
+  },
+  {
+    name: "camenduru/AnimateDiff-Lightning",
+    endpoint: "camenduru/AnimateDiff-Lightning",
+    method: "/predict",
+    maxDuration: 16,
+    fps: 8,
+    requiresImage: true
+  },
+  {
+    name: "KingNish/Image-to-Video",
+    endpoint: "KingNish/Image-to-Video",
+    method: "/predict",
+    maxDuration: 8,
+    fps: 8,
+    requiresImage: true
   }
 ];
 
@@ -152,6 +157,22 @@ function downloadVideo(videoUrl, outputPath) {
   });
 }
 
+function downloadImage(imageUrl, outputPath) {
+  return new Promise((resolve, reject) => {
+    const file = fs.createWriteStream(outputPath);
+    https.get(imageUrl, (response) => {
+      response.pipe(file);
+      file.on('finish', () => {
+        file.close();
+        resolve();
+      });
+    }).on('error', (err) => {
+      fs.unlink(outputPath, () => {});
+      reject(err);
+    });
+  });
+}
+
 async function uploadToGofile(filePath) {
   const form = new FormData();
   form.append("file", fs.createReadStream(filePath));
@@ -178,7 +199,7 @@ function sendToTelegram(filePath, prompt, isImage = false) {
   return new Promise((resolve, reject) => {
     const form = new FormData();
     form.append("chat_id", TELEGRAM_CHAT_ID);
-    form.append("caption", `${isImage ? '🖼️' : '🎥'} Prompt: ${prompt}`);
+    form.append("caption", `${isImage ? '🖼️' : '🎥'} ${isImage ? 'Image' : 'Image-to-Video'}: ${prompt}`);
     
     if (isImage) {
       form.append("photo", fs.createReadStream(filePath));
@@ -271,43 +292,61 @@ function isRateLimited(userId) {
   return false;
 }
 
-// Enhanced video generation with multiple APIs
-async function generateVideo(prompt, seed = 3, fps = 10, duration = 16) {
+// Enhanced image-to-video generation with multiple APIs
+async function generateVideoFromImage(imagePath, prompt = "", seed = 3, fps = 8, duration = 16) {
   const errors = [];
   
   // Try each API until one works
   for (const api of VIDEO_APIS) {
     try {
-      console.log(`🎬 Trying ${api.name} for video generation...`);
+      console.log(`🎬 Trying ${api.name} for image-to-video generation...`);
       
       const client = await Client.connect(api.endpoint);
       
       let result;
       
-      // Handle different API signatures
-      if (api.name === "multimodalart/self-forcing") {
+      // Handle different API signatures for image-to-video
+      if (api.name === "stabilityai/stable-video-diffusion-img2vid-xt") {
         result = await client.predict(api.method, {
-          prompt,
+          image: imagePath,
           seed: Number(seed),
-          fps: Math.min(Number(fps), api.fps),
+          motion_bucket_id: 127,
+          fps_id: 6,
+          version: "svd_xt",
+          cond_aug: 0.02,
+          decoding_t: 3,
+          num_frames: Math.min(duration, api.maxDuration)
         });
-      } else if (api.name === "stabilityai/stable-video-diffusion-img2vid-xt") {
-        // This one needs an input image first
-        continue;
-      } else if (api.name === "wangfuyun/AnimateLCM") {
+      } else if (api.name === "ali-vilab/i2vgen-xl") {
         result = await client.predict(api.method, {
-          prompt,
+          image: imagePath,
+          text_prompt: prompt || "animate this image",
           negative_prompt: "blurry, low quality, distorted",
+          randomize_seed: true,
+          seed: Number(seed),
+          motion_scale: 1.0
+        });
+      } else if (api.name === "multimodalart/stable-video-diffusion") {
+        result = await client.predict(api.method, {
+          image: imagePath,
+          seed: Number(seed),
+          num_frames: Math.min(duration, api.maxDuration),
+          motion_bucket_id: 127,
+          fps_id: 6
+        });
+      } else if (api.name === "camenduru/AnimateDiff-Lightning") {
+        result = await client.predict(api.method, {
+          image: imagePath,
+          prompt: prompt || "animate this image with natural motion",
           num_inference_steps: 8,
           guidance_scale: 2.0,
-          width: 512,
-          height: 512,
           num_frames: Math.min(duration, api.maxDuration),
           fps: api.fps
         });
       } else {
         result = await client.predict(api.method, {
-          prompt,
+          image: imagePath,
+          prompt: prompt || "animate this image",
           seed: Number(seed),
           num_frames: Math.min(duration, api.maxDuration),
           fps: api.fps
@@ -354,7 +393,7 @@ async function generateVideo(prompt, seed = 3, fps = 10, duration = 16) {
   throw new Error(`All video APIs failed: ${errors.join(', ')}`);
 }
 
-// Image generation function
+// Image generation function (unchanged)
 async function generateImage(prompt, seed = 3) {
   const errors = [];
   
@@ -415,7 +454,7 @@ async function generateImage(prompt, seed = 3) {
       const outputPath = path.join(__dirname, filename);
 
       // Download image
-      await downloadVideo(imageUrl, outputPath);
+      await downloadImage(imageUrl, outputPath);
 
       console.log(`✅ Successfully generated image using ${api.name}`);
       return outputPath;
@@ -433,16 +472,16 @@ async function generateImage(prompt, seed = 3) {
 // Web Routes
 app.get("/", (req, res) => {
   res.json({
-    status: "🔥 Enhanced Video & Image Generation Bot API",
+    status: "🔥 Enhanced Image-to-Video & Image Generation Bot API",
     endpoints: {
-      "/generate-video": "Generate video from prompt (supports longer duration)",
+      "/generate-video": "Generate video from image (Image-to-Video)",
       "/generate-image": "Generate image from prompt",
       "/webhook": "Telegram webhook endpoint",
       "/set-webhook": "Set Telegram webhook",
       "/api-status": "Check API health status"
     },
     features: {
-      "Video APIs": VIDEO_APIS.length,
+      "Video APIs": VIDEO_APIS.length + " (Image-to-Video)",
       "Image APIs": IMAGE_APIS.length,
       "Max Video Duration": "25 frames",
       "Content Filtering": "Enabled",
@@ -460,51 +499,66 @@ app.get("/api-status", (req, res) => {
 });
 
 app.get("/generate-video", async (req, res) => {
-  const { prompt, seed = 3, fps = 10, duration = 16 } = req.query;
+  const { image_url, prompt = "", seed = 3, fps = 8, duration = 16 } = req.query;
   const ip = req.clientIp || req.headers["x-forwarded-for"]?.split(",")[0] || "unknown";
 
-  if (!prompt) {
-    return res.status(400).json({ error: "Missing prompt parameter" });
+  if (!image_url) {
+    return res.status(400).json({ error: "Missing image_url parameter for image-to-video generation" });
   }
 
   if (bannedIPs.has(ip)) {
     return res.status(403).json({ error: "IP banned for inappropriate content" });
   }
 
-  // Relaxed profanity check - only block extremely inappropriate content
-  const offensiveWords = ['fuck', 'shit', 'damn', 'ass', 'bitch'];
-  const hasOffensiveContent = offensiveWords.some(word => 
-    prompt.toLowerCase().includes(word.toLowerCase())
-  );
+  // Relaxed profanity check for prompt
+  if (prompt) {
+    const offensiveWords = ['fuck', 'shit', 'damn', 'ass', 'bitch'];
+    const hasOffensiveContent = offensiveWords.some(word => 
+      prompt.toLowerCase().includes(word.toLowerCase())
+    );
 
-  if (hasOffensiveContent) {
-    bannedIPs.add(ip);
-    await notifyBanToTelegram(ip, prompt);
-    return res.status(403).json({ error: "Content blocked for inappropriate language" });
+    if (hasOffensiveContent) {
+      bannedIPs.add(ip);
+      await notifyBanToTelegram(ip, prompt);
+      return res.status(403).json({ error: "Content blocked for inappropriate language" });
+    }
   }
 
   let outputPath = "";
+  let inputImagePath = "";
 
   try {
-    outputPath = await generateVideo(prompt, seed, fps, duration);
-    const publicUrl = await uploadToGofile(outputPath);
-    const telegramInfo = await sendToTelegram(outputPath, prompt, false);
+    // Download input image first
+    const imageFilename = `input_${Date.now()}.jpg`;
+    inputImagePath = path.join(__dirname, imageFilename);
+    await downloadImage(image_url, inputImagePath);
 
+    outputPath = await generateVideoFromImage(inputImagePath, prompt, seed, fps, duration);
+    const publicUrl = await uploadToGofile(outputPath);
+    const telegramInfo = await sendToTelegram(outputPath, `Image-to-Video: ${prompt}`, false);
+
+    // Clean up files
     fs.unlink(outputPath, () => {
       console.log(`🧹 Cleaned up: ${outputPath}`);
+    });
+    fs.unlink(inputImagePath, () => {
+      console.log(`🧹 Cleaned up: ${inputImagePath}`);
     });
 
     res.json({
       url: publicUrl,
-      message: "Video generated and sent to group successfully.",
+      message: "Video generated from image and sent to group successfully.",
       link: telegramInfo.message_link,
       type: "video"
     });
 
   } catch (err) {
-    console.error("Video generation error:", err.message);
+    console.error("Image-to-video generation error:", err.message);
     if (outputPath && fs.existsSync(outputPath)) {
       fs.unlinkSync(outputPath);
+    }
+    if (inputImagePath && fs.existsSync(inputImagePath)) {
+      fs.unlinkSync(inputImagePath);
     }
     res.status(500).json({ error: err.message });
   }
@@ -577,30 +631,30 @@ app.post("/webhook", async (req, res) => {
 
       // Handle /start command
       if (text === "/start") {
-        const welcomeText = `🎥 *Welcome to Enhanced Video & Image Generation Bot!*
+        const welcomeText = `🎥 *Welcome to Enhanced Image-to-Video & Image Generation Bot!*
 
 🚀 *How to use:*
-Send me a text prompt and I'll generate content for you!
+Send me an image and I'll animate it, or send text to generate an image!
 
 📝 *Commands:*
-• \`/video [prompt]\` - Generate video (up to 25 frames)
+• Send an image → I'll animate it into a video!
 • \`/image [prompt]\` - Generate image (1024x1024)
 • \`/help\` - Show this help message
 
-🎯 *Example prompts:*
-• \`/video A cat playing with a ball in slow motion\`
-• \`/image A futuristic city at sunset\`
-• \`A dragon flying over mountains\` (auto-detects type)
+🎯 *Example usage:*
+• Send a photo of a landscape → Get animated video
+• \`/image A futuristic city at sunset\` → Get generated image
+• Add text with your image for motion guidance
 
 ⚡ *Features:*
-• ${VIDEO_APIS.length} video generation APIs
+• ${VIDEO_APIS.length} image-to-video generation APIs
 • ${IMAGE_APIS.length} image generation APIs  
 • Longer video duration (up to 25 frames)
 • High-quality outputs
 • Automatic fallback between APIs
 • 10 generations per 30 minutes
 
-🎬 *Just send your prompt and watch the magic happen!*`;
+🎬 *Just send an image and watch it come to life!*`;
 
         await sendTelegramMessage(chatId, welcomeText);
         return res.status(200).send("OK");
@@ -610,28 +664,32 @@ Send me a text prompt and I'll generate content for you!
       if (text === "/help") {
         const helpText = `📚 *Help & Commands*
 
-*Basic Usage:*
-• \`/video [prompt]\` - Generate video
-• \`/image [prompt]\` - Generate image
-• Just send text for auto-detection
+*Image-to-Video:*
+• Send any image (photo/document)
+• Add optional text for motion guidance
+• I'll create an animated video from your image!
+
+*Image Generation:*
+• \`/image [prompt]\` - Generate image from text
 
 *Advanced Options:*
-• \`/video [prompt] seed:123\` - Use specific seed
-• \`/image [prompt] seed:456\` - Use specific seed
+• \`seed:123\` in caption - Use specific seed
+• Motion prompts: "gentle breeze", "flowing water", etc.
 
 *Limits:*
 • 10 generations per 30 minutes
-• Video: Up to 25 frames
+• Video: Up to 25 frames from your image
 • Image: 1024x1024 resolution
 
 *Tips:*
-• Be descriptive for better results
-• Use "cinematic", "detailed", "high quality" in prompts
-• Avoid inappropriate content
+• High quality images work best
+• Use motion descriptions for better animation
+• Portrait/landscape images both supported
 
 *Examples:*
-• \`/video A majestic eagle soaring through clouds, cinematic\`
-• \`/image A cyberpunk city with neon lights, highly detailed\``;
+• Send landscape photo + "gentle wind blowing"
+• Send portrait + "subtle head movement"
+• \`/image A cyberpunk city with neon lights\``;
 
         await sendTelegramMessage(chatId, helpText);
         return res.status(200).send("OK");
@@ -643,99 +701,201 @@ Send me a text prompt and I'll generate content for you!
         return res.status(200).send("OK");
       }
 
-      // Relaxed profanity check
-      const offensiveWords = ['fuck', 'shit', 'damn', 'ass', 'bitch'];
-      const hasOffensiveContent = offensiveWords.some(word => 
-        text.toLowerCase().includes(word.toLowerCase())
-      );
-
-      if (hasOffensiveContent) {
-        await sendTelegramMessage(chatId, "🚫 *Content blocked!*\n\nYour message contains inappropriate content. Please keep it clean! 🧼");
-        bannedIPs.add(userId.toString());
-        await notifyBanToTelegram(userId.toString(), text);
-        return res.status(200).send("OK");
-      }
-
       // Check if user is banned
       if (bannedIPs.has(userId.toString())) {
         await sendTelegramMessage(chatId, "🚫 *You are banned from using this bot.*\n\nReason: Inappropriate content.");
         return res.status(200).send("OK");
       }
 
-      // Parse command and prompt
-      let isVideo = true;
-      let prompt = text;
-      let seed = Math.floor(Math.random() * 1000);
+      // Handle image messages for video generation
+      if (message.photo || message.document) {
+        let fileId;
+        
+        if (message.photo) {
+          // Get the highest quality photo
+          fileId = message.photo[message.photo.length - 1].file_id;
+        } else if (message.document && message.document.mime_type?.startsWith('image/')) {
+          fileId = message.document.file_id;
+        }
 
-      if (text.startsWith("/video ")) {
-        prompt = text.substring(7);
-        isVideo = true;
-      } else if (text.startsWith("/image ")) {
-        prompt = text.substring(7);
-        isVideo = false;
-      } else if (text.includes("image") || text.includes("picture") || text.includes("photo")) {
-        isVideo = false;
-      }
+        if (fileId) {
+          try {
+            // Get file info from Telegram
+            const fileResponse = await axios.get(
+              `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getFile?file_id=${fileId}`
+            );
+            
+            if (!fileResponse.data.ok) {
+              throw new Error("Failed to get file info from Telegram");
+            }
 
-      // Extract seed if provided
-      const seedMatch = prompt.match(/seed:(\d+)/);
-      if (seedMatch) {
-        seed = parseInt(seedMatch[1]);
-        prompt = prompt.replace(/seed:\d+/, '').trim();
-      }
+            const filePath = fileResponse.data.result.file_path;
+            const fileUrl = `https://api.telegram.org/file/bot${TELEGRAM_BOT_TOKEN}/${filePath}`;
 
-      if (!prompt) {
-        await sendTelegramMessage(chatId, "❌ *Empty prompt!*\n\nPlease provide a description for generation.");
+            // Get motion prompt from caption
+            let motionPrompt = message.caption || "natural motion, animate this image";
+            let seed = Math.floor(Math.random() * 1000);
+
+            // Extract seed if provided in caption
+            if (message.caption) {
+              const seedMatch = message.caption.match(/seed:(\d+)/);
+              if (seedMatch) {
+                seed = parseInt(seedMatch[1]);
+                motionPrompt = message.caption.replace(/seed:\d+/, '').trim() || "natural motion";
+              }
+
+              // Check for profanity in caption
+              const offensiveWords = ['fuck', 'shit', 'damn', 'ass', 'bitch'];
+              const hasOffensiveContent = offensiveWords.some(word => 
+                motionPrompt.toLowerCase().includes(word.toLowerCase())
+              );
+
+              if (hasOffensiveContent) {
+                await sendTelegramMessage(chatId, "🚫 *Content blocked!*\n\nYour caption contains inappropriate content. Please keep it clean! 🧼");
+                bannedIPs.add(userId.toString());
+                await notifyBanToTelegram(userId.toString(), motionPrompt);
+                return res.status(200).send("OK");
+              }
+            }
+
+            await sendTelegramMessage(chatId, `🎬 *Converting your image to video...*\n\nMotion: ${motionPrompt}\n\nThis may take a few moments. Please wait! ⏳`);
+            
+            // Download the image
+            const imageFilename = `input_${Date.now()}.jpg`;
+            const inputImagePath = path.join(__dirname, imageFilename);
+            await downloadImage(fileUrl, inputImagePath);
+            
+            // Generate video from image
+            const outputPath = await generateVideoFromImage(inputImagePath, motionPrompt, seed, 8, 16);
+            
+            // Send video directly to user
+            const form = new FormData();
+            form.append("chat_id", chatId);
+            form.append("caption", `🎥 *Your animated video:*\n\n🎭 Motion: ${motionPrompt}\n🎲 Seed: ${seed}`);
+            form.append("parse_mode", "Markdown");
+            form.append("video", fs.createReadStream(outputPath));
+
+            await axios.post(
+              `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendVideo`,
+              form,
+              {
+                headers: form.getHeaders(),
+                maxBodyLength: Infinity,
+                maxContentLength: Infinity,
+              }
+            );
+
+            // Also send to channel
+            await sendToTelegram(outputPath, `Image-to-Video: ${motionPrompt}`, false);
+
+            // Clean up
+            fs.unlink(outputPath, () => {
+              console.log(`🧹 Cleaned up: ${outputPath}`);
+            });
+            fs.unlink(inputImagePath, () => {
+              console.log(`🧹 Cleaned up: ${inputImagePath}`);
+            });
+
+            await sendTelegramMessage(chatId, `✅ *Video generated successfully!*\n\nYour animated video has also been shared in our channel. 📢`);
+
+          } catch (error) {
+            console.error("Image-to-video error:", error.message);
+            await sendTelegramMessage(chatId, `❌ *Error converting image to video*\n\nSorry, something went wrong. Please try with a different image.`);
+          }
+        }
         return res.status(200).send("OK");
       }
 
-      // Generate content
-      try {
-        await sendTelegramMessage(chatId, `${isVideo ? '🎬' : '🖼️'} *Generating your ${isVideo ? 'video' : 'image'}...*\n\nThis may take a few moments. Please wait! ⏳`);
-        
-        let outputPath;
-        if (isVideo) {
-          outputPath = await generateVideo(prompt, seed, 8, 16);
-        } else {
-          outputPath = await generateImage(prompt, seed);
-        }
-        
-        // Send content directly to user
-        const form = new FormData();
-        form.append("chat_id", chatId);
-        form.append("caption", `${isVideo ? '🎥' : '🖼️'} *Your generated ${isVideo ? 'video' : 'image'}:*\n\n📝 Prompt: ${prompt}\n🎲 Seed: ${seed}`);
-        form.append("parse_mode", "Markdown");
-        
-        if (isVideo) {
-          form.append("video", fs.createReadStream(outputPath));
-        } else {
-          form.append("photo", fs.createReadStream(outputPath));
+      // Handle text commands for image generation
+      if (text && text.startsWith("/image ")) {
+        const prompt = text.substring(7);
+        let seed = Math.floor(Math.random() * 1000);
+
+        // Extract seed if provided
+        const seedMatch = prompt.match(/seed:(\d+)/);
+        let finalPrompt = prompt;
+        if (seedMatch) {
+          seed = parseInt(seedMatch[1]);
+          finalPrompt = prompt.replace(/seed:\d+/, '').trim();
         }
 
-        const endpoint = isVideo ? "sendVideo" : "sendPhoto";
-        await axios.post(
-          `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/${endpoint}`,
-          form,
-          {
-            headers: form.getHeaders(),
-            maxBodyLength: Infinity,
-            maxContentLength: Infinity,
-          }
+        if (!finalPrompt) {
+          await sendTelegramMessage(chatId, "❌ *Empty prompt!*\n\nPlease provide a description for image generation.");
+          return res.status(200).send("OK");
+        }
+
+        // Check profanity
+        const offensiveWords = ['fuck', 'shit', 'damn', 'ass', 'bitch'];
+        const hasOffensiveContent = offensiveWords.some(word => 
+          finalPrompt.toLowerCase().includes(word.toLowerCase())
         );
 
-        // Also send to channel
-        await sendToTelegram(outputPath, prompt, !isVideo);
+        if (hasOffensiveContent) {
+          await sendTelegramMessage(chatId, "🚫 *Content blocked!*\n\nYour prompt contains inappropriate content. Please keep it clean! 🧼");
+          bannedIPs.add(userId.toString());
+          await notifyBanToTelegram(userId.toString(), finalPrompt);
+          return res.status(200).send("OK");
+        }
 
-        // Clean up
-        fs.unlink(outputPath, () => {
-          console.log(`🧹 Cleaned up: ${outputPath}`);
-        });
+        try {
+          await sendTelegramMessage(chatId, `🖼️ *Generating your image...*\n\nPrompt: ${finalPrompt}\n\nThis may take a few moments. Please wait! ⏳`);
+          
+          const outputPath = await generateImage(finalPrompt, seed);
+          
+          // Send image directly to user
+          const form = new FormData();
+          form.append("chat_id", chatId);
+          form.append("caption", `🖼️ *Your generated image:*\n\n📝 Prompt: ${finalPrompt}\n🎲 Seed: ${seed}`);
+          form.append("parse_mode", "Markdown");
+          form.append("photo", fs.createReadStream(outputPath));
 
-        await sendTelegramMessage(chatId, `✅ *${isVideo ? 'Video' : 'Image'} generated successfully!*\n\nYour content has also been shared in our channel. 📢`);
+          await axios.post(
+            `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendPhoto`,
+            form,
+            {
+              headers: form.getHeaders(),
+              maxBodyLength: Infinity,
+              maxContentLength: Infinity,
+            }
+          );
 
-      } catch (error) {
-        console.error("Generation error:", error.message);
-        await sendTelegramMessage(chatId, `❌ *Error generating ${isVideo ? 'video' : 'image'}*\n\nSorry, something went wrong. Please try again with a different prompt.`);
+          // Also send to channel
+          await sendToTelegram(outputPath, finalPrompt, true);
+
+          // Clean up
+          fs.unlink(outputPath, () => {
+            console.log(`🧹 Cleaned up: ${outputPath}`);
+          });
+
+          await sendTelegramMessage(chatId, `✅ *Image generated successfully!*\n\nYour image has also been shared in our channel. 📢`);
+
+        } catch (error) {
+          console.error("Image generation error:", error.message);
+          await sendTelegramMessage(chatId, `❌ *Error generating image*\n\nSorry, something went wrong. Please try again with a different prompt.`);
+        }
+        return res.status(200).send("OK");
+      }
+
+      // Handle regular text messages
+      if (text && !text.startsWith('/')) {
+        await sendTelegramMessage(chatId, `📖 *How to use this bot:*
+
+🎬 *For Image-to-Video:*
+• Send me any image (photo or document)
+• Add optional caption for motion guidance
+• I'll create an animated video!
+
+🖼️ *For Image Generation:*
+• Use: \`/image [your prompt]\`
+• Example: \`/image a beautiful sunset over mountains\`
+
+💡 *Tips:*
+• Send photos with captions like "gentle wind", "flowing water"
+• Use \`seed:123\` in captions for consistent results
+• High quality images work best for animation
+
+Try sending me an image or use \`/image\` command! 🚀`);
+        return res.status(200).send("OK");
       }
     }
 
@@ -780,9 +940,9 @@ app.delete("/webhook", async (req, res) => {
 
 // Start server and set webhook
 app.listen(port, async () => {
-  console.log(`🔥 Enhanced API running on http://localhost:${port}`);
+  console.log(`🔥 Enhanced Image-to-Video API running on http://localhost:${port}`);
   console.log(`🌐 Webhook URL: ${WEBHOOK_URL}`);
-  console.log(`🎬 Video APIs: ${VIDEO_APIS.length}`);
+  console.log(`🎬 Image-to-Video APIs: ${VIDEO_APIS.length}`);
   console.log(`🖼️ Image APIs: ${IMAGE_APIS.length}`);
   
   // Set webhook on startup
