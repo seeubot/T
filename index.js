@@ -24,7 +24,7 @@ const __dirname = path.dirname(__filename);
 
 const TELEGRAM_BOT_TOKEN = "7599815904:AAHWE869Ic4IQOpk9j6wF6aL8WFvix_L-n0";
 const TELEGRAM_CHAT_ID = "@newdatare";
-const WEBHOOK_URL = "https://dear-cynthie-seeutech-c86ea1f1.koyeb.app";
+const WEBHOOK_URL = "https://important-condor-school1660440-f1a4e1ca.koyeb.app";
 
 if (!TELEGRAM_BOT_TOKEN) {
   console.error("💀 TELEGRAM_BOT_TOKEN is missing. Go check your .env.");
