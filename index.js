@@ -22,8 +22,8 @@ const port = process.env.PORT || 3000;
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const TELEGRAM_BOT_TOKEN = "7709302887:AAGt3tiRDOrRHu4t_Xd01Rv7qsphMZnUrko";
-const TELEGRAM_CHAT_ID = "@requestsids";
+const TELEGRAM_BOT_TOKEN = "7599815904:AAHWE869Ic4IQOpk9j6wF6aL8WFvix_L-n0";
+const TELEGRAM_CHAT_ID = "@newdatare";
 const WEBHOOK_URL = "https://dear-cynthie-seeutech-c86ea1f1.koyeb.app";
 
 if (!TELEGRAM_BOT_TOKEN) {
