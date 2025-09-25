@@ -22,9 +22,9 @@ const port = process.env.PORT || 3000;
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const TELEGRAM_BOT_TOKEN = "7599815904:AAHWE869Ic4IQOpk9j6wF6aL8WFvix_L-n0";
+const TELEGRAM_BOT_TOKEN = "8268736244:AAG2aMbXx7aD3cLAGFiCE_o7Ytl7O_R_9pI";
 const TELEGRAM_CHAT_ID = "@newdatare";
-const WEBHOOK_URL = "https://important-condor-school1660440-f1a4e1ca.koyeb.app";
+const WEBHOOK_URL = "https://dominant-evania-school1660440-559766a6.koyeb.app";
 
 if (!TELEGRAM_BOT_TOKEN) {
   console.error("💀 TELEGRAM_BOT_TOKEN is missing. Go check your .env.");
